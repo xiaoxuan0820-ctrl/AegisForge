@@ -28,10 +28,20 @@ app = Flask(__name__)
 
 
 def _handle_text_message(text: str, sender_id: str) -> dict:
-    """处理文本消息"""
+    """处理文本消息（根据 EXECUTOR_BACKEND 自动选择后端）"""
     message = route_feishu(text, sender_id)
     logger.info(f"📨 [飞书] {sender_id}: {text}")
 
+    from autodroid_agent.config import EXECUTOR_BACKEND
+
+    # Hermes 后端：让手机端自行规划执行
+    if EXECUTOR_BACKEND == "hermes":
+        from autodroid_agent.executor_hermes import execute_agent_task, check_health
+        if not check_health():
+            return {"success": False, "error": "Hermes APK 不可用，请确认手机已连接"}
+        return execute_agent_task(text)
+
+    # ADB 后端：LLM 解析 + 本地逐条执行
     try:
         actions = parse_actions(text)
     except Exception as e:

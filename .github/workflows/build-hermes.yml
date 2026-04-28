@@ -62,21 +62,10 @@ jobs:
           echo "📝 修改 App 名称..."
           find app/src/main/res -name "strings.xml" -exec sed -i 's/ApkClaw/AegisPhone/g; s/apk_claw/aegis_phone/g' {} +
           echo "🔄 替换项目中所有 ApkClaw 引用..."
-          find . -type f \( -name "*.xml" -o -name "*.kt" -o -name "*.java" -o -name "*.kts" \) \
+          find . -type f \( -name "*.xml" -o -name "*.kt" -o -name "*.java" \) \
             -exec sed -i 's/ApkClaw/AegisPhone/g; s/apk_claw/aegis_phone/g' {} + 2>/dev/null || true
           echo "🎨 生成 AegisPhone 图标..."
           python3 "${{ github.workspace }}/scripts/generate_icons.py"
-
-      - name: 🔱 AegisPhone 品牌重塑（名字+图标）
-        working-directory: hermes-android
-        run: |
-          set -e
-          echo "📝 修改 App 名称..."
-          find app/src/main/res -name "strings.xml" -exec sed -i 's/ApkClaw/AegisPhone/g; s/apk_claw/aegis_phone/g' {} +
-          echo "🔄 替换项目中所有 ApkClaw 引用..."
-          find . -type f \( -name "*.xml" -o -name "*.kt" -o -name "*.java" -o -name "*.kts" \) -exec sed -i 's/ApkClaw/AegisPhone/g; s/apk_claw/aegis_phone/g' {} + 2>/dev/null || true
-          echo "🎨 生成 AegisPhone 图标..."
-          python3 /tmp/gen_icon.py
 
       - name: Build Debug APK
         working-directory: hermes-android
