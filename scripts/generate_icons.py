@@ -103,12 +103,6 @@ def main():
         "res",
     )
 
-    # Remove old icon that conflicts with mipmap approach
-    old_icon = os.path.join(base, "drawable-nodpi", "ic_launcher.png")
-    if os.path.exists(old_icon):
-        os.remove(old_icon)
-        print(f"  🗑️ Removed old drawable-nodpi/ic_launcher.png")
-
     # PNG fallback icons for pre-v26
     icons = {
         "mipmap-mdpi": 48,

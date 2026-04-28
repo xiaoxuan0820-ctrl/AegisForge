@@ -19,11 +19,18 @@ jobs:
           repository: rfdiosuao/Hermes-Agent-phone
           path: hermes-android
 
-      - name: Fix icon reference in manifest (drawable → mipmap)
+      - name: Fix icon references (drawable → mipmap)
         run: |
+          # Fix manifest
           sed -i 's|@drawable/ic_launcher|@mipmap/ic_launcher|g' \
             hermes-android/app/src/main/AndroidManifest.xml
-          echo "✅ Manifest icon reference fixed"
+          # Fix layout/resource XML files
+          find hermes-android/app/src/main/res -name "*.xml" \
+            -exec sed -i 's|@drawable/ic_launcher|@mipmap/ic_launcher|g' {} +
+          # Fix Kotlin references (R.drawable → R.mipmap)
+          find hermes-android/app/src/main/java -name "*.kt" \
+            -exec sed -i 's|R\.drawable\.ic_launcher|R.mipmap.ic_launcher|g' {} +
+          echo "✅ All icon references fixed (drawable → mipmap)"
 
       - name: Apply AgentConfig patch (phone-master 系统提示词)
         run: |
