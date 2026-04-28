@@ -136,15 +136,104 @@ def _action_open_app(name: str) -> bool:
 
 
 def _action_input(text: str) -> bool:
-    """输入文本"""
-    # 对特殊字符做转义处理
-    escaped = text.replace(" ", "%s").replace("'", "\\'")
-    code, out, err = _exec_adb(["shell", "input", "text", escaped])
-    if code != 0:
-        logger.error(f"输入文本失败: {err.strip()}")
+    """输入文本（支持中文）"""
+
+    def _try_adb_input(t: str) -> bool:
+        """尝试 ADB input text（仅 ASCII）"""
+        escaped = t.replace(" ", "%s").replace("'", "\\'")
+        code, out, err = _exec_adb(["shell", "input", "text", escaped])
+        return code == 0
+
+    def _try_clipboard_paste(t: str) -> bool:
+        """通过剪贴板粘贴输入（支持中文）"""
+        # 方法1: 使用 content provider 设置剪贴板（Android 10+）
+        try:
+            import base64
+            encoded = base64.b64encode(t.encode("utf-8")).decode("ascii")
+            code, _, _ = _exec_adb([
+                "shell", "content", "call", "--uri",
+                "content://com.android.clipboard.provider",
+                "--method", "setPrimaryClip",
+                "--arg", f"text/plain,{encoded}",
+            ], timeout=5)
+            if code == 0:
+                # 模拟长按粘贴键
+                _exec_adb(["shell", "input", "keyevent", "KEYCODE_PASTE"], timeout=3)
+                return True
+        except Exception:
+            pass
+
+        # 方法2: 使用 am broadcast（部分设备支持）
+        try:
+            code, _, _ = _exec_adb([
+                "shell", "am", "broadcast", "-a",
+                "ADB_INPUT_TEXT", "--es", "msg", t,
+            ], timeout=5)
+            if code == 0:
+                return True
+        except Exception:
+            pass
+
+        # 方法3: 通过 settings 写剪贴板
+        try:
+            code, _, _ = _exec_adb([
+                "shell", "settings", "put", "global",
+                "clipboard_text", t,
+            ], timeout=5)
+            if code == 0:
+                _exec_adb(["shell", "input", "keyevent", "KEYCODE_PASTE"], timeout=3)
+                return True
+        except Exception:
+            pass
+
         return False
-    logger.info(f"✅ input('{text[:20]}{'...' if len(text) > 20 else ''}')")
-    return True
+
+    def _try_adb_keyboard(t: str) -> bool:
+        """尝试使用 ADBKeyboard（如果已安装）"""
+        try:
+            code, _, _ = _exec_adb([
+                "shell", "am", "broadcast", "-a",
+                "ADB_INPUT_B64", "--es", "msg",
+                __import__("base64").b64encode(t.encode("utf-8")).decode(),
+            ], timeout=5)
+            return code == 0
+        except Exception:
+            return False
+
+    # 尝试顺序：ADBKeyboard → 剪贴板 → ADB input (仅ASCII)
+    if _try_adb_keyboard(text):
+        logger.info(f"✅ input('{text[:20]}{'...' if len(text) > 20 else ''}') [ADBKeyboard]")
+        return True
+
+    if _try_clipboard_paste(text):
+        logger.info(f"✅ input('{text[:20]}{'...' if len(text) > 20 else ''}') [Clipboard]")
+        return True
+
+    if text.isascii() and _try_adb_input(text):
+        logger.info(f"✅ input('{text[:20]}')")
+        return True
+
+    # 最终方案：尝试用 sendevent 逐字符输入
+    logger.warning("标准输入方法均失败，尝试 sendevent...")
+    return _try_sendevent(text)
+
+
+def _try_sendevent(text: str) -> bool:
+    """通过 sendevent 模拟按键（备选方案）"""
+    try:
+        code, _, _ = _exec_adb(["shell", "input", "keyevent", "KEYCODE_SEARCH"], timeout=3)
+        if code != 0:
+            return False
+        time.sleep(0.5)
+        # 通过剪贴板粘贴（最通用方案）
+        from autodroid_agent.utils.screenshot import _adb_prefix
+        prefix = " ".join(_adb_prefix(ADB_DEVICE))
+        cmd = f'{prefix} shell "echo \\"{text}\\" | clip && input keyevent KEYCODE_PASTE"'
+        import subprocess
+        r = subprocess.run(cmd, shell=True, capture_output=True, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return False
 
 
 def _action_wait(seconds: int | float) -> bool:

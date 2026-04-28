@@ -1,4 +1,7 @@
-"""AutoDroid Agent 配置模块"""
+"""
+AegisPhone 🔱 配置模块
+AutoDroid + Hermes 双后端 Android 自动化控制系统
+"""
 
 import os
 from dotenv import load_dotenv
@@ -10,21 +13,28 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")
 
+# ==================== 执行后端 ====================
+# 可选: "adb" (AutoDroid/ADB), "hermes" (Hermes-Agent REST API)
+EXECUTOR_BACKEND = os.getenv("EXECUTOR_BACKEND", "adb")
+
 # ==================== ADB 配置 ====================
-ADB_PATH = os.getenv("ADB_PATH", "/opt/homebrew/bin/adb")  # ADB 可执行文件路径
-ADB_HOST = os.getenv("ADB_HOST", "127.0.0.1")
-ADB_PORT = int(os.getenv("ADB_PORT", "5555"))
-ADB_DEVICE = os.getenv("ADB_DEVICE", "")  # 留空则使用唯一设备
+ADB_PATH = os.getenv("ADB_PATH", "/opt/homebrew/bin/adb")
+ADB_DEVICE = os.getenv("ADB_DEVICE", "")
+
+# ==================== Hermes REST API 配置 ====================
+HERMES_HOST = os.getenv("HERMES_HOST", "192.168.1.100")  # 手机 WiFi IP
+HERMES_PORT = int(os.getenv("HERMES_PORT", "9527"))
+HERMES_TOKEN = os.getenv("HERMES_TOKEN", "")  # Bearer token
 
 # ==================== 飞书配置 ====================
 FEISHU_WEBHOOK_PORT = int(os.getenv("FEISHU_WEBHOOK_PORT", "5000"))
 FEISHU_VERIFY_TOKEN = os.getenv("FEISHU_VERIFY_TOKEN", "")
-FEISHU_BOT_NAME = os.getenv("FEISHU_BOT_NAME", "AutoDroid助手")
+FEISHU_BOT_NAME = os.getenv("FEISHU_BOT_NAME", "AegisPhone")
 
 # ==================== 安全机制 ====================
-MAX_TAPS = int(os.getenv("MAX_TAPS", "5"))           # 连续点击上限
-MAX_EXECUTION_TIME = int(os.getenv("MAX_EXECUTION_TIME", "60"))  # 总执行时间上限（秒）
-MAX_STEPS = int(os.getenv("MAX_STEPS", "30"))        # 最大步骤数
+MAX_TAPS = int(os.getenv("MAX_TAPS", "5"))
+MAX_EXECUTION_TIME = int(os.getenv("MAX_EXECUTION_TIME", "60"))
+MAX_STEPS = int(os.getenv("MAX_STEPS", "30"))
 
 # ==================== 路径 ====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -6,3 +6,5 @@ screenshots/*
 !logs/.gitkeep
 !screenshots/.gitkeep
 .DS_Store
+*.apk
+autodroid-apk/
