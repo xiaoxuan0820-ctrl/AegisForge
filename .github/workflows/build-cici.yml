@@ -158,18 +158,20 @@ jobs:
           EXIT_CODE=${PIPESTATUS[0]}
           if [ $EXIT_CODE -ne 0 ]; then
             echo "=== ERROR: compilation failed ==="
-            wc -c /tmp/kotlin_output.txt
-            echo "=== HEAD ==="
+            echo "=== HEAD 30 ==="
             head -30 /tmp/kotlin_output.txt
             echo "=== TAIL 30 ==="
             tail -30 /tmp/kotlin_output.txt
-            echo "=== SUMMARY ===" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -50 /tmp/kotlin_output.txt >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
           echo "=== Kotlin compilation OK ==="
+
+      - name: Upload compile logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-compile-output
+          path: /tmp/kotlin_output.txt
 
       - name: Build Debug APK
         working-directory: hermes-android
