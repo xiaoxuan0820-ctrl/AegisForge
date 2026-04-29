@@ -146,54 +146,36 @@ jobs:
           }
           PATCH
 
-      - name: 🎀 CiCi 品牌重塑（名字+图标）
+      - name: CiCi 品牌重塑（名字+图标）
         working-directory: hermes-android
         run: |
           set -e
-          echo "📝 修改 App 名称..."
+          echo "修改 App 名称..."
           find app/src/main/res -name "strings.xml" -exec sed -i 's/ApkClaw/CiCi/g; s/apk_claw/cici/g' {} +
-          echo "🔄 替换项目中所有 ApkClaw 引用..."
+          echo "替换项目中所有 ApkClaw 引用..."
           find . -type f \( -name "*.xml" -o -name "*.kt" -o -name "*.java" \) \
             -exec sed -i 's/ApkClaw/CiCi/g; s/apk_claw/cici/g' {} + 2>/dev/null || true
-          echo "🎨 生成 CiCi 图标..."
+          echo "生成 CiCi 图标..."
           python3 "${{ github.workspace }}/scripts/generate_icons.py"
 
       - name: Compile Kotlin (debug errors first)
         working-directory: hermes-android
         run: |
           echo "=== Running Kotlin compilation ==="
-          # Run Kotlin compilation, capture full output
-          ./gradlew :app:compileDebugKotlin --no-daemon -Dorg.gradle.jvmargs=-Xmx4g 2>&1 | tee /tmp/kotlin_output.txt
-          EXIT_CODE=${PIPESTATUS[0]}
+          ./gradlew :app:compileDebugKotlin --no-daemon -Dorg.gradle.jvmargs=-Xmx4g > /tmp/kotlin_output.txt 2>&1
+          EXIT_CODE=$?
           if [ $EXIT_CODE -ne 0 ]; then
-            echo "=== KOTLIN COMPILATION FAILED ===" >> $GITHUB_STEP_SUMMARY
-            # Extract Kotlin compilation errors and emit as GitHub annotations
-            python3 -c "
-import re, sys
-with open('/tmp/kotlin_output.txt') as f:
-    text = f.read()
-# Find Kotlin compiler errors: 'e: file:line:col message'
-errors = re.findall(r'(e:\s*.*\.(?:kt|java):\s*\d+:\s*\d+.*(?:\n\s*.*)*)', text)
-if not errors:
-    # Try Gradle-style errors
-    errors = re.findall(r'(> Task .*FAILED.*|Android resource linking failed.*)', text)
-for err in errors:
-    err_clean = err.strip()[:200]
-    # Emit annotation
-    print(f'::error::{err_clean}')
-    print(err_clean)
-# Also print to summary
-print('=== GRADLE ERROR LINES ===', file=open('/tmp/gradle_errors.txt','w'))
-for line in text.split('\n'):
-    low = line.lower()
-    if 'error:' in low or 'failed' in low or 'unresolved' in low or 'cannot find' in low or 'incompatible' in low or 'unresolved reference' in low or 'expecting' in low:
-        print(line[:300], file=open('/tmp/gradle_errors.txt','a'))
-" 2>&1
-            # Also append to step summary
-            cat /tmp/gradle_errors.txt >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "=== Last 100 lines ===" >> $GITHUB_STEP_SUMMARY
-            tail -100 /tmp/kotlin_output.txt >> $GITHUB_STEP_SUMMARY
+            echo "### KOTLIN COMPILATION FAILED" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -n "error:" /tmp/kotlin_output.txt | head -30 >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+            grep -n "unresolved reference" /tmp/kotlin_output.txt | head -20 >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "=== LAST 50 LINES ===" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -50 /tmp/kotlin_output.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "=== COMPILATION ERRORS ==="
+            grep -n "error:" /tmp/kotlin_output.txt | head -30
             exit 1
           fi
           echo "=== Kotlin compilation OK ==="
@@ -201,16 +183,4 @@ for line in text.split('\n'):
       - name: Build Debug APK
         working-directory: hermes-android
         run: |
-          ./gradlew assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx4g 2>&1 | tee /tmp/build_output.txt
-          if [ ${PIPESTATUS[0]} -ne 0 ]; then
-            echo "=== BUILD FAILED ==="
-            grep -i "error:" /tmp/build_output.txt | head -50
-            exit 1
-          fi
-
-      - name: Upload CiCi APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: cici-apk
-          path: hermes-android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+          ./gradlew assembleDebug --no-daemon -Dorg.gradle.jvmargs=-Xmx4g 2>&1
