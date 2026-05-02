@@ -64,8 +64,11 @@ class ConfigServer(
                 uri == "/debug.html" && method == Method.GET && BuildConfig.DEBUG -> serveDebugHtml()
                 uri == "/api/debug/tools" && method == Method.GET && BuildConfig.DEBUG -> handleGetTools()
                 uri == "/api/debug/execute" && method == Method.POST && BuildConfig.DEBUG -> handleExecuteTool(session)
+                uri == "/api/screenshot" && method == Method.GET -> handleScreenshot()
                 uri == "/api/debug/screen-full" && method == Method.GET && BuildConfig.DEBUG -> handleGetScreenFull()
                 uri.startsWith("/api/debug/file") && method == Method.GET && BuildConfig.DEBUG -> handleServeFile(session)
+                uri == "/api/config/export" && method == Method.GET -> handleConfigExport()
+                uri == "/api/config/import" && method == Method.POST -> handleConfigImport(session)
                 else -> corsResponse(
                     newFixedLengthResponse(
                         Response.Status.NOT_FOUND, MIME_JSON,
@@ -944,6 +947,88 @@ loadAll();
             else -> "application/octet-stream"
         }
         return corsResponse(newFixedLengthResponse(Response.Status.OK, mime, file.inputStream(), file.length()))
+    }
+
+    // ==================== 截图预览 API ====================
+
+    private fun handleScreenshot(): Response {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "screencap -p"))
+            val pngBytes = process.inputStream.readBytes()
+            process.waitFor()
+            if (pngBytes.isEmpty()) {
+                return corsResponse(newFixedLengthResponse(Response.Status.OK, MIME_JSON,
+                    """{"code":-1,"message":"screencap returned empty"}"""))
+            }
+            corsResponse(newFixedLengthResponse(Response.Status.OK, "image/png",
+                java.io.ByteArrayInputStream(pngBytes), pngBytes.size.toLong()))
+        } catch (e: Exception) {
+            corsResponse(newFixedLengthResponse(Response.Status.OK, MIME_JSON,
+                """{"code":-1,"message":"${e.message}"}"""))
+        }
+    }
+
+    // ==================== 配置备份/恢复 API ====================
+
+    private fun handleConfigExport(): Response {
+        val data = JsonObject()
+        // LLM 配置
+        data.addProperty("llmApiKey", KVUtils.getLlmApiKey())
+        data.addProperty("llmBaseUrl", KVUtils.getLlmBaseUrl())
+        data.addProperty("llmModelName", KVUtils.getLlmModelName())
+        // 渠道配置
+        data.addProperty("dingtalkAppKey", KVUtils.getDingtalkAppKey())
+        data.addProperty("dingtalkAppSecret", KVUtils.getDingtalkAppSecret())
+        data.addProperty("feishuAppId", KVUtils.getFeishuAppId())
+        data.addProperty("feishuAppSecret", KVUtils.getFeishuAppSecret())
+        data.addProperty("qqAppId", KVUtils.getQqAppId())
+        data.addProperty("qqAppSecret", KVUtils.getQqAppSecret())
+        data.addProperty("discordBotToken", KVUtils.getDiscordBotToken())
+        data.addProperty("telegramBotToken", KVUtils.getTelegramBotToken())
+        // 当前人格
+        data.addProperty("activePersonaId", Persona.getActive().id)
+        data.addProperty("_version", 1)
+        data.addProperty("_exportedAt", System.currentTimeMillis())
+        val result = JsonObject().apply {
+            addProperty("code", 0)
+            add("data", data)
+        }
+        return corsResponse(newFixedLengthResponse(Response.Status.OK, MIME_JSON, result.toString()))
+    }
+
+    private fun handleConfigImport(session: IHTTPSession): Response {
+        val files = mutableMapOf<String, String>()
+        session.parseBody(files)
+        val body = files["postData"] ?: ""
+        val json = try {
+            gson.fromJson(body, JsonObject::class.java)
+        } catch (e: Exception) {
+            return corsResponse(newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_JSON,
+                """{"code":-1,"message":"invalid json"}"""))
+        }
+        val data = json.getAsJsonObject("data") ?: json
+        var count = 0
+        // LLM 配置
+        if (data.has("llmApiKey")) { KVUtils.setLlmApiKey(data.get("llmApiKey").asString); count++ }
+        if (data.has("llmBaseUrl")) { KVUtils.setLlmBaseUrl(data.get("llmBaseUrl").asString); count++ }
+        if (data.has("llmModelName")) { KVUtils.setLlmModelName(data.get("llmModelName").asString); count++ }
+        // 渠道配置
+        if (data.has("dingtalkAppKey")) { KVUtils.setDingtalkAppKey(data.get("dingtalkAppKey").asString); count++ }
+        if (data.has("dingtalkAppSecret")) { KVUtils.setDingtalkAppSecret(data.get("dingtalkAppSecret").asString); count++ }
+        if (data.has("feishuAppId")) { KVUtils.setFeishuAppId(data.get("feishuAppId").asString); count++ }
+        if (data.has("feishuAppSecret")) { KVUtils.setFeishuAppSecret(data.get("feishuAppSecret").asString); count++ }
+        if (data.has("qqAppId")) { KVUtils.setQqAppId(data.get("qqAppId").asString); count++ }
+        if (data.has("qqAppSecret")) { KVUtils.setQqAppSecret(data.get("qqAppSecret").asString); count++ }
+        if (data.has("discordBotToken")) { KVUtils.setDiscordBotToken(data.get("discordBotToken").asString); count++ }
+        if (data.has("telegramBotToken")) { KVUtils.setTelegramBotToken(data.get("telegramBotToken").asString); count++ }
+        // 人格
+        if (data.has("activePersonaId")) {
+            val pid = data.get("activePersonaId").asString
+            Persona.getById(pid)?.let { Persona.setActive(it); count++ }
+        }
+        ConfigServerManager.notifyConfigChanged()
+        return corsResponse(newFixedLengthResponse(Response.Status.OK, MIME_JSON,
+            """{"code":0,"message":"配置已恢复，共 $count 项"}"""))
     }
 
     private fun maskSecret(secret: String): String {

@@ -56,6 +56,8 @@ class DefaultAgentService : AgentService {
     private var executor: ExecutorService? = null
     private val running = AtomicBoolean(false)
     private val cancelled = AtomicBoolean(false)
+    /** 视觉 fallback 模式：无障碍服务不可用时使用 screencap+input 命令 */
+    private var useAdbFallback = false
 
     /** 当前任务的工具调用记录，用于自动学习模板 */
     private val currentToolCallRecords = mutableListOf<ToolCallRecord>()
@@ -103,8 +105,22 @@ class DefaultAgentService : AgentService {
 
     private fun preCheck(): String? {
         if (ClawAccessibilityService.getInstance() == null) {
+            // 视觉 fallback: 尝试使用 screencap + input 命令
+            try {
+                val procScreen = Runtime.getRuntime().exec(arrayOf("sh", "-c", "which screencap"))
+                val procInput = Runtime.getRuntime().exec(arrayOf("sh", "-c", "which input"))
+                if (procScreen.waitFor() == 0 && procInput.waitFor() == 0) {
+                    useAdbFallback = true
+                    XLog.i(TAG, "Accessibility unavailable, switching to visual fallback mode")
+                    return null
+                }
+            } catch (e: Exception) {
+                XLog.w(TAG, "Visual fallback check failed: ${e.message}")
+            }
+            useAdbFallback = false
             return ClawApplication.instance.getString(R.string.agent_accessibility_not_enabled)
         }
+        useAdbFallback = false
         return null
     }
 
@@ -131,6 +147,7 @@ class DefaultAgentService : AgentService {
         }
 
         sb.append("- 已注册工具数: ").append(ToolRegistry.getAllTools().size).append("\n")
+        sb.append("- 控制模式: ").append(if (useAdbFallback) "ADB Fallback" else "Accessibility Service").append("\n")
 
         val appName = try {
             val appInfo = app.packageManager.getApplicationInfo(app.packageName, 0)
@@ -332,7 +349,8 @@ class DefaultAgentService : AgentService {
             taskPrompt = userPrompt
         )
         val personaSuffix = Persona.getActive().getSystemPromptSuffix()
-        val fullSystemPrompt = config.systemPrompt + buildDeviceContext() + memoryContext + "\n\n" + personaSuffix
+        val pdcaInstruction = "\n\n## PDCA 执行原则\n- 每次调用操作工具后，系统会自动截图验证执行效果\n- 通过分析截图判断操作是否生效\n- 如果操作未生效，尝试重试或改用其他方法\n- 确认操作成功后，再执行下一步"
+        val fullSystemPrompt = config.systemPrompt + buildDeviceContext() + memoryContext + "\n\n" + personaSuffix + pdcaInstruction
 
         val messages = mutableListOf<ChatMessage>()
         messages.add(SystemMessage.from(fullSystemPrompt))
@@ -461,6 +479,22 @@ class DefaultAgentService : AgentService {
                 val resultJson = GSON.toJson(result)
                 messages.add(ToolExecutionResultMessage.from(toolRequest, resultJson))
                 XLog.d(TAG, "displayName:$displayName toolName:$toolName")
+            }
+
+            // PDCA: 本轮工具执行完毕，自动截图供下一轮 LLM 验证
+            if (!cancelled.get() && llmResponse.toolExecutionRequests.isNotEmpty()) {
+                try {
+                    Thread.sleep(500)
+                    val pdcaResult = ToolRegistry.getInstance().executeTool("get_screen_info", emptyMap())
+                    if (pdcaResult.isSuccess && pdcaResult.data != null) {
+                        lastScreenHash = pdcaResult.data.hashCode()
+                        messages.add(ToolExecutionResultMessage.from("pdca", "verify_screenshot",
+                            "[PDCA验证] 本轮执行后的屏幕状态:\n${pdcaResult.data.take(500)}"))
+                        XLog.d(TAG, "PDCA: post-round screenshot captured")
+                    }
+                } catch (e: Exception) {
+                    XLog.w(TAG, "PDCA screenshot failed: ${e.message}")
+                }
             }
 
             // 死循环检测

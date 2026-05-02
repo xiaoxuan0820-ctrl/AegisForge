@@ -339,6 +339,22 @@ input:focus {
   color: #86868b;
   font-size: 15px;
 }
+/* ====== Screen Preview ====== */
+.screen-preview .dot { background: #007AFF !important; }
+.btn-sm {
+  padding: 8px 16px;
+  border: 1.5px solid #e5e5ea;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: #fff;
+  color: #5856D6;
+  transition: all 0.15s;
+}
+.btn-sm:hover { border-color: #5856D6; background: #f5f5ff; }
+/* ====== Backup ====== */
+.backup .dot { background: #FF9500 !important; }
 </style>
 </head>
 <body>
@@ -399,6 +415,20 @@ input:focus {
       </div>
       <div class="memory-list" id="memoryList">
         <div class="empty-skills">暂无记忆</div>
+      </div>
+    </div>
+
+    <!-- Screen Preview -->
+    <div class="card screen-preview">
+      <div class="card-title"><span class="dot"></span>📺 实时预览</div>
+      <div style="text-align:center;">
+        <img id="screenPreview" src="/api/screenshot?t=0" style="max-width:100%;border-radius:8px;border:1px solid #e5e5ea;background:#000;" alt="屏幕预览">
+        <div style="margin-top:8px;display:flex;gap:8px;justify-content:center;">
+          <button class="btn-sm" onclick="refreshScreen()">🔄 刷新</button>
+          <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:#86868b;cursor:pointer;">
+            <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> 自动刷新(3s)
+          </label>
+        </div>
       </div>
     </div>
 
@@ -470,6 +500,16 @@ input:focus {
         </div>
       </div>
       <p style="font-size:12px;color:#86868b;margin-top:8px;" data-i18n="telegram_tip"></p>
+    </div>
+
+    <!-- Backup & Restore -->
+    <div class="card backup">
+      <div class="card-title"><span class="dot"></span>💾 备份与恢复</div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn" onclick="exportConfig()" style="flex:1;padding:10px;font-size:14px;">📤 导出配置</button>
+        <label class="btn" style="flex:1;padding:10px;font-size:14px;text-align:center;cursor:pointer;" for="importFileInput">📥 导入配置</label>
+        <input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importConfig(event)">
+      </div>
     </div>
 
     <button class="btn" id="saveBtn" onclick="save()" data-i18n="save_btn"></button>
@@ -927,6 +967,66 @@ function showToast(msg, type) {
   el.className = 'toast ' + type;
   requestAnimationFrame(() => { el.classList.add('show'); });
   setTimeout(() => { el.classList.remove('show'); }, 2500);
+}
+
+// ====== Screen Preview ======
+function refreshScreen() {
+  document.getElementById('screenPreview').src = '/api/screenshot?t=' + Date.now();
+}
+let autoRefreshTimer = null;
+function toggleAutoRefresh() {
+  const chk = document.getElementById('autoRefresh');
+  if (chk.checked) {
+    autoRefreshTimer = setInterval(refreshScreen, 3000);
+  } else if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+}
+
+// ====== Config Backup & Restore ======
+async function exportConfig() {
+  try {
+    const res = await fetch('/api/config/export');
+    const json = await res.json();
+    if (json.code === 0) {
+      const blob = new Blob([JSON.stringify(json.data, null, 2)], {type: 'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'cici-config-backup.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast('✅ 配置已导出', 'success');
+    } else {
+      showToast('❌ 导出失败: ' + (json.message || ''), 'error');
+    }
+  } catch (e) {
+    showToast('❌ ' + e.message, 'error');
+  }
+}
+
+async function importConfig(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    const res = await fetch('/api/config/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({data: parsed})
+    });
+    const json = await res.json();
+    if (json.code === 0) {
+      showToast('✅ 配置已恢复，请刷新页面', 'success');
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      showToast('❌ 导入失败: ' + (json.message || ''), 'error');
+    }
+  } catch (e) {
+    showToast('❌ ' + e.message, 'error');
+  }
+  event.target.value = '';
 }
 
 load();
